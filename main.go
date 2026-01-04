@@ -5,29 +5,59 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/kstenerud/go-bonjson"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: j2b <input-file> [output-file]")
+	var allowTrailing bool
+	var skipBytes int
+	args := os.Args[1:]
+
+	// Parse flags
+	for len(args) > 0 && len(args[0]) > 0 && args[0][0] == '-' && args[0] != "-" {
+		switch args[0] {
+		case "-t":
+			allowTrailing = true
+			args = args[1:]
+		case "-s", "--start":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Error: -s requires an argument")
+				os.Exit(1)
+			}
+			var err error
+			skipBytes, err = strconv.Atoi(args[1])
+			if err != nil || skipBytes < 0 {
+				fmt.Fprintf(os.Stderr, "Error: invalid skip value: %s\n", args[1])
+				os.Exit(1)
+			}
+			args = args[2:]
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown option: %s\n", args[0])
+			os.Exit(1)
+		}
+	}
+
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "Usage: j2b [-t] [-s N] <input-file> <output-file>")
 		fmt.Fprintln(os.Stderr, "  Converts JSON to BONJSON or BONJSON to JSON.")
 		fmt.Fprintln(os.Stderr, "  Format is auto-detected from the input.")
 		fmt.Fprintln(os.Stderr, "  Use '-' for stdin/stdout.")
+		fmt.Fprintln(os.Stderr, "Options:")
+		fmt.Fprintln(os.Stderr, "  -t       Allow trailing data after BONJSON document")
+		fmt.Fprintln(os.Stderr, "  -s N     Skip N bytes before decoding")
 		os.Exit(1)
 	}
 
-	inputPath := os.Args[1]
-	var outputPath string
-	if len(os.Args) >= 3 {
-		outputPath = os.Args[2]
-	}
+	inputPath := args[0]
+	outputPath := args[1]
 
-	if err := convert(inputPath, outputPath); err != nil {
+	if err := convert(inputPath, outputPath, allowTrailing, skipBytes); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -35,8 +65,10 @@ func main() {
 
 // convert reads the input, detects its format, and converts it to the other
 // format. If inputPath is "-", reads from stdin. If outputPath is empty or
-// "-", output goes to stdout.
-func convert(inputPath, outputPath string) error {
+// "-", output goes to stdout. If allowTrailing is true, trailing data after
+// a BONJSON document is ignored. If skipBytes > 0, that many bytes are skipped
+// before decoding.
+func convert(inputPath, outputPath string, allowTrailing bool, skipBytes int) error {
 	var data []byte
 	var err error
 	if inputPath == "-" {
@@ -51,8 +83,15 @@ func convert(inputPath, outputPath string) error {
 		}
 	}
 
+	if skipBytes > 0 {
+		if skipBytes >= len(data) {
+			return fmt.Errorf("skip value %d exceeds input size %d", skipBytes, len(data))
+		}
+		data = data[skipBytes:]
+	}
+
 	if len(data) == 0 {
-		return fmt.Errorf("input file is empty")
+		return fmt.Errorf("input is empty")
 	}
 
 	isJSON := detectJSON(data)
@@ -66,7 +105,7 @@ func convert(inputPath, outputPath string) error {
 		}
 		outputIsJSON = false
 	} else {
-		output, err = bonjsonToJSON(data)
+		output, err = bonjsonToJSON(data, allowTrailing)
 		if err != nil {
 			return fmt.Errorf("converting BONJSON to JSON: %w", err)
 		}
@@ -241,9 +280,19 @@ func jsonToBONJSON(data []byte) ([]byte, error) {
 }
 
 // bonjsonToJSON converts BONJSON data to pretty-printed JSON format.
-func bonjsonToJSON(data []byte) ([]byte, error) {
+// If allowTrailing is true, trailing data after the BONJSON document is ignored.
+func bonjsonToJSON(data []byte, allowTrailing bool) ([]byte, error) {
 	var value any
-	if err := bonjson.Unmarshal(data, &value); err != nil {
+	_, err := bonjson.UnmarshalWithByteCount(data, &value)
+	if err != nil {
+		// If trailing data error and we're allowing it, ignore the error
+		// since the value was successfully decoded
+		var trailingErr *bonjson.TrailingDataError
+		if allowTrailing && errors.As(err, &trailingErr) {
+			err = nil
+		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	return json.MarshalIndent(value, "", "    ")
