@@ -14,8 +14,9 @@ j2b [-t] [-s N] <input-file> <output-file>
 - JSON output is pretty-printed with 4-space indentation
 
 **Options:**
-- `-t` : Allow trailing data after BONJSON document (ignored for JSON input)
+- `-t` : Allow trailing data after BONJSON document (BONJSON input only)
 - `-s N` : Skip N bytes before decoding (useful for files with headers)
+- `-e` : Print end offset of decoded BONJSON document to stderr (BONJSON input only)
 
 ## Architecture
 
