@@ -47,20 +47,24 @@ func main() {
 		}
 	}
 
-	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: j2b [options] <input-file> <output-file>")
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: j2b [options] <input-file> [output-file]")
 		fmt.Fprintln(os.Stderr, "  Converts JSON to BONJSON or BONJSON to JSON.")
 		fmt.Fprintln(os.Stderr, "  Format is auto-detected from the input.")
 		fmt.Fprintln(os.Stderr, "  Use '-' for stdin/stdout.")
+		fmt.Fprintln(os.Stderr, "  If output-file is omitted, validates input only.")
 		fmt.Fprintln(os.Stderr, "Options:")
-		fmt.Fprintln(os.Stderr, "  -e       Print end offset of BONJSON document (BONJSON input only)")
-		fmt.Fprintln(os.Stderr, "  -t       Allow trailing data after BONJSON document (BONJSON input only)")
+		fmt.Fprintln(os.Stderr, "  -e       Print the offset of one past the end of the BONJSON document to stderr (BONJSON input only)")
 		fmt.Fprintln(os.Stderr, "  -s N     Skip N bytes before decoding")
+		fmt.Fprintln(os.Stderr, "  -t       Allow trailing data after the BONJSON document (BONJSON input only)")
 		os.Exit(1)
 	}
 
 	inputPath := args[0]
-	outputPath := args[1]
+	outputPath := ""
+	if len(args) >= 2 {
+		outputPath = args[1]
+	}
 
 	if err := convert(inputPath, outputPath, allowTrailing, skipBytes, printEndOffset); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -69,11 +73,12 @@ func main() {
 }
 
 // convert reads the input, detects its format, and converts it to the other
-// format. If inputPath is "-", reads from stdin. If outputPath is empty or
-// "-", output goes to stdout. If allowTrailing is true, trailing data after
-// a BONJSON document is ignored. If skipBytes > 0, that many bytes are skipped
-// before decoding. If printEndOffset is true and input is BONJSON, prints the
-// end offset to stderr.
+// format. If inputPath is "-", reads from stdin. If outputPath is "-", output
+// goes to stdout. If outputPath is empty, only validates the input without
+// producing output. If allowTrailing is true, trailing data after a BONJSON
+// document is ignored. If skipBytes > 0, that many bytes are skipped before
+// decoding. If printEndOffset is true and input is BONJSON, prints the end
+// offset to stderr.
 func convert(inputPath, outputPath string, allowTrailing bool, skipBytes int, printEndOffset bool) error {
 	var data []byte
 	var err error
@@ -101,6 +106,32 @@ func convert(inputPath, outputPath string, allowTrailing bool, skipBytes int, pr
 	}
 
 	isJSON := detectJSON(data)
+
+	// Validate-only mode: just parse the input without converting
+	if outputPath == "" {
+		if isJSON {
+			var value any
+			if err := json.Unmarshal(data, &value); err != nil {
+				return fmt.Errorf("invalid JSON: %w", err)
+			}
+		} else {
+			var value any
+			byteCount, err := bonjson.UnmarshalWithByteCount(data, &value)
+			if err != nil {
+				var trailingErr *bonjson.TrailingDataError
+				if allowTrailing && errors.As(err, &trailingErr) {
+					err = nil
+				}
+			}
+			if err != nil {
+				return fmt.Errorf("invalid BONJSON: %w", err)
+			}
+			if printEndOffset {
+				fmt.Fprintf(os.Stderr, "%d\n", skipBytes+byteCount)
+			}
+		}
+		return nil
+	}
 
 	var output []byte
 	var outputIsJSON bool

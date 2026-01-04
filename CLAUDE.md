@@ -7,16 +7,17 @@ A command-line tool that converts between JSON and BONJSON formats. It automatic
 ## Usage
 
 ```
-j2b [-t] [-s N] <input-file> <output-file>
+j2b [options] <input-file> [<output-file>]
 ```
 
 - Use `-` for stdin or stdout
+- If output-file is omitted, validates input only (no conversion)
 - JSON output is pretty-printed with 4-space indentation
 
 **Options:**
-- `-t` : Allow trailing data after BONJSON document (BONJSON input only)
-- `-s N` : Skip N bytes before decoding (useful for files with headers)
 - `-e` : Print end offset of decoded BONJSON document to stderr (BONJSON input only)
+- `-s N` : Skip N bytes before decoding (useful for files with headers)
+- `-t` : Allow trailing data after BONJSON document (BONJSON input only)
 
 ## Architecture
 
