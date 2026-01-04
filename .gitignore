@@ -1,0 +1,19 @@
+# Build output
+j2b
+*.exe
+
+# Test artifacts
+*.test
+*.out
+coverage.html
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
