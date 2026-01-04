@@ -1,13 +1,13 @@
-# j2b - JSON/BONJSON Converter
+# bonbon - JSON/BONJSON Converter
 
 ## Purpose
 
-A command-line tool that converts between JSON and BONJSON formats.
+A command-line tool for working with JSON and BONJSON formats.
 
 ## Usage
 
 ```
-j2b [options] <command> <input> [output]
+bonbon [options] <command> <input> [output]
 ```
 
 - Use `-` for stdin or stdout
@@ -46,7 +46,7 @@ This is a simple single-file CLI application with no complex architecture. All l
 ## Building
 
 ```
-go build -o j2b
+go build -o bonbon
 ```
 
 ## Testing

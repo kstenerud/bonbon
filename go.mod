@@ -1,4 +1,4 @@
-module j2b
+module bonbon
 
 go 1.25.5
 

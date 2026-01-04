@@ -1,4 +1,4 @@
-// ABOUTME: CLI tool that converts between JSON and BONJSON formats.
+// ABOUTME: bonbon - CLI tool for working with JSON and BONJSON formats.
 // ABOUTME: Uses explicit commands to specify input/output formats.
 
 package main
@@ -15,7 +15,7 @@ import (
 )
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: j2b [options] <command> <input> [output]")
+	fmt.Fprintln(os.Stderr, "Usage: bonbon [options] <command> <input> [output]")
 	fmt.Fprintln(os.Stderr, "  Use '-' for stdin/stdout.")
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  j        Validate JSON input (no output)")
@@ -111,6 +111,11 @@ func main() {
 			os.Exit(1)
 		}
 		outputPath = args[2]
+	} else {
+		if len(args) > 2 {
+			fmt.Fprintf(os.Stderr, "Error: %s command does not accept an output file\n", command)
+			os.Exit(1)
+		}
 	}
 
 	if err := convert(inputPath, outputPath, inputJSON, outputJSON, allowTrailing, skipBytes, printEndOffset); err != nil {
