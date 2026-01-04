@@ -1,5 +1,5 @@
 // ABOUTME: CLI tool that converts between JSON and BONJSON formats.
-// ABOUTME: Automatically detects input format and converts to the other format.
+// ABOUTME: Uses explicit commands to specify input/output formats.
 
 package main
 
@@ -13,6 +13,22 @@ import (
 
 	"github.com/kstenerud/go-bonjson"
 )
+
+func printUsage() {
+	fmt.Fprintln(os.Stderr, "Usage: j2b [options] <command> <input> [output]")
+	fmt.Fprintln(os.Stderr, "  Use '-' for stdin/stdout.")
+	fmt.Fprintln(os.Stderr, "Commands:")
+	fmt.Fprintln(os.Stderr, "  j        Validate JSON input (no output)")
+	fmt.Fprintln(os.Stderr, "  b        Validate BONJSON input (no output)")
+	fmt.Fprintln(os.Stderr, "  j2b      Convert JSON to BONJSON")
+	fmt.Fprintln(os.Stderr, "  j2j      Convert JSON to JSON (reformat)")
+	fmt.Fprintln(os.Stderr, "  b2j      Convert BONJSON to JSON")
+	fmt.Fprintln(os.Stderr, "  b2b      Convert BONJSON to BONJSON (reformat)")
+	fmt.Fprintln(os.Stderr, "Options:")
+	fmt.Fprintln(os.Stderr, "  -e       Print end offset to stderr (BONJSON input only)")
+	fmt.Fprintln(os.Stderr, "  -s N     Skip N bytes before decoding")
+	fmt.Fprintln(os.Stderr, "  -t       Allow trailing data (BONJSON input only)")
+}
 
 func main() {
 	var allowTrailing bool
@@ -29,7 +45,7 @@ func main() {
 		case "-e":
 			printEndOffset = true
 			args = args[1:]
-		case "-s", "--start":
+		case "-s":
 			if len(args) < 2 {
 				fmt.Fprintln(os.Stderr, "Error: -s requires an argument")
 				os.Exit(1)
@@ -47,39 +63,70 @@ func main() {
 		}
 	}
 
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: j2b [options] <input-file> [output-file]")
-		fmt.Fprintln(os.Stderr, "  Converts JSON to BONJSON or BONJSON to JSON.")
-		fmt.Fprintln(os.Stderr, "  Format is auto-detected from the input.")
-		fmt.Fprintln(os.Stderr, "  Use '-' for stdin/stdout.")
-		fmt.Fprintln(os.Stderr, "  If output-file is omitted, validates input only.")
-		fmt.Fprintln(os.Stderr, "Options:")
-		fmt.Fprintln(os.Stderr, "  -e       Print the offset of one past the end of the BONJSON document to stderr (BONJSON input only)")
-		fmt.Fprintln(os.Stderr, "  -s N     Skip N bytes before decoding")
-		fmt.Fprintln(os.Stderr, "  -t       Allow trailing data after the BONJSON document (BONJSON input only)")
+	if len(args) < 2 {
+		printUsage()
 		os.Exit(1)
 	}
 
-	inputPath := args[0]
+	command := args[0]
+	inputPath := args[1]
 	outputPath := ""
-	if len(args) >= 2 {
-		outputPath = args[1]
+
+	// Determine input/output formats and required args based on command
+	var inputJSON, outputJSON bool
+	var needsOutput bool
+
+	switch command {
+	case "j":
+		inputJSON = true
+		needsOutput = false
+	case "b":
+		inputJSON = false
+		needsOutput = false
+	case "j2b":
+		inputJSON = true
+		outputJSON = false
+		needsOutput = true
+	case "j2j":
+		inputJSON = true
+		outputJSON = true
+		needsOutput = true
+	case "b2j":
+		inputJSON = false
+		outputJSON = true
+		needsOutput = true
+	case "b2b":
+		inputJSON = false
+		outputJSON = false
+		needsOutput = true
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
 	}
 
-	if err := convert(inputPath, outputPath, allowTrailing, skipBytes, printEndOffset); err != nil {
+	if needsOutput {
+		if len(args) < 3 {
+			fmt.Fprintf(os.Stderr, "Error: %s command requires an output file\n", command)
+			os.Exit(1)
+		}
+		outputPath = args[2]
+	}
+
+	if err := convert(inputPath, outputPath, inputJSON, outputJSON, allowTrailing, skipBytes, printEndOffset); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// convert reads the input, detects its format, and converts it to the other
-// format. If inputPath is "-", reads from stdin. If outputPath is "-", output
-// goes to stdout. If outputPath is empty, only validates the input without
-// producing output. If allowTrailing is true, trailing data after a BONJSON
-// document is ignored. If skipBytes > 0, that many bytes are skipped before
-// decoding. If printEndOffset is true and input is BONJSON, prints the end
-// offset to stderr.
-func convert(inputPath, outputPath string, allowTrailing bool, skipBytes int, printEndOffset bool) error {
+// convert reads the input and converts it to the specified output format.
+// If inputPath is "-", reads from stdin. If outputPath is "-", output goes to
+// stdout. If outputPath is empty, only validates the input without producing
+// output. inputJSON and outputJSON specify the formats. If allowTrailing is
+// true, trailing data after a BONJSON document is ignored. If skipBytes > 0,
+// that many bytes are skipped before decoding. If printEndOffset is true and
+// input is BONJSON, prints the end offset to stderr.
+func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrailing bool, skipBytes int, printEndOffset bool) error {
 	var data []byte
 	var err error
 	if inputPath == "-" {
@@ -105,252 +152,63 @@ func convert(inputPath, outputPath string, allowTrailing bool, skipBytes int, pr
 		return fmt.Errorf("input is empty")
 	}
 
-	isJSON := detectJSON(data)
+	// Decode input
+	var value any
+	var byteCount int
+	var decodeErr error
 
-	// Validate-only mode: just parse the input without converting
+	if inputJSON {
+		if err := json.Unmarshal(data, &value); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+	} else {
+		byteCount, decodeErr = bonjson.UnmarshalWithByteCount(data, &value)
+		if decodeErr != nil {
+			var trailingErr *bonjson.TrailingDataError
+			if allowTrailing && errors.As(decodeErr, &trailingErr) {
+				decodeErr = nil
+			}
+		}
+		if printEndOffset {
+			fmt.Fprintf(os.Stderr, "%d\n", skipBytes+byteCount)
+		}
+	}
+
+	// Validate-only mode: no output
 	if outputPath == "" {
-		if isJSON {
-			var value any
-			if err := json.Unmarshal(data, &value); err != nil {
-				return fmt.Errorf("invalid JSON: %w", err)
-			}
-		} else {
-			var value any
-			byteCount, err := bonjson.UnmarshalWithByteCount(data, &value)
-			if err != nil {
-				var trailingErr *bonjson.TrailingDataError
-				if allowTrailing && errors.As(err, &trailingErr) {
-					err = nil
-				}
-			}
-			if err != nil {
-				return fmt.Errorf("invalid BONJSON: %w", err)
-			}
-			if printEndOffset {
-				fmt.Fprintf(os.Stderr, "%d\n", skipBytes+byteCount)
-			}
+		if decodeErr != nil {
+			return fmt.Errorf("invalid BONJSON: %w", decodeErr)
 		}
 		return nil
 	}
 
+	// Encode output
 	var output []byte
-	var outputIsJSON bool
-	var decodeErr error
-	if isJSON {
-		output, err = jsonToBONJSON(data)
+	if outputJSON {
+		output, err = json.MarshalIndent(value, "", "    ")
 		if err != nil {
-			return fmt.Errorf("converting JSON to BONJSON: %w", err)
+			return fmt.Errorf("encoding JSON: %w", err)
 		}
-		outputIsJSON = false
 	} else {
-		var byteCount int
-		output, byteCount, decodeErr = bonjsonToJSON(data, allowTrailing)
-		if printEndOffset {
-			fmt.Fprintf(os.Stderr, "%d\n", skipBytes+byteCount)
+		output, err = bonjson.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("encoding BONJSON: %w", err)
 		}
-		outputIsJSON = true
 	}
 
-	// Write output first (may be partial on BONJSON decode error)
+	// Write output (may be partial on BONJSON decode error)
 	if len(output) > 0 {
-		if err := writeOutput(output, outputPath, outputIsJSON); err != nil {
+		if err := writeOutput(output, outputPath, outputJSON); err != nil {
 			return err
 		}
 	}
 
 	// Report any decode error after writing partial output
 	if decodeErr != nil {
-		return fmt.Errorf("converting BONJSON to JSON: %w", decodeErr)
+		return fmt.Errorf("decoding BONJSON: %w", decodeErr)
 	}
 
 	return nil
-}
-
-// detectJSON determines if the data appears to be JSON (text) or BONJSON (binary).
-// This is non-trivial because many BONJSON type codes overlap with valid JSON start
-// characters. The detection looks at subsequent bytes to disambiguate.
-//
-// Key observations from the BONJSON spec:
-//   - 0x99 (array start) and 0x9a (object start) are unambiguously BONJSON
-//   - 0x66 ('f') is reserved in BONJSON, so unambiguously JSON
-//   - Small integers 0-100 (0x00-0x64) overlap with many ASCII chars including digits
-//   - 0x6e is BONJSON false, but also ASCII 'n' (start of JSON null)
-//   - 0x74 is BONJSON unsigned 5-byte int type, but also ASCII 't' (start of JSON true)
-//   - 0x7b is BONJSON signed 4-byte int type, but also ASCII '{' (JSON object start)
-func detectJSON(data []byte) bool {
-	// Skip leading whitespace
-	start := skipWhitespace(data, 0)
-	if start >= len(data) {
-		return true // Only whitespace, default to JSON (will error on parse)
-	}
-
-	first := data[start]
-
-	// Unambiguously BONJSON: container starts that aren't valid ASCII for JSON
-	if first == 0x99 || first == 0x9a {
-		return false
-	}
-
-	// Unambiguously JSON: 'f' (0x66 is reserved in BONJSON)
-	if first == 'f' {
-		return true
-	}
-
-	// If it's not a valid JSON start character, it must be BONJSON
-	if !isValidJSONStart(first) {
-		return false
-	}
-
-	// For ambiguous bytes, examine subsequent bytes to disambiguate
-	remaining := data[start+1:]
-
-	switch first {
-	case 't':
-		// JSON true: must be followed by "rue"
-		// BONJSON: unsigned 5-byte integer (type code followed by 5 bytes of data)
-		return len(remaining) >= 3 &&
-			remaining[0] == 'r' && remaining[1] == 'u' && remaining[2] == 'e'
-
-	case 'n':
-		// JSON null: must be followed by "ull"
-		// BONJSON: false (single byte, document complete)
-		return len(remaining) >= 3 &&
-			remaining[0] == 'u' && remaining[1] == 'l' && remaining[2] == 'l'
-
-	case '{':
-		// JSON object: { followed by optional whitespace, then " or }
-		// BONJSON: signed 4-byte integer (type code followed by 4 bytes of data)
-		return looksLikeJSONObject(remaining)
-
-	case '[':
-		// JSON array: [ followed by optional whitespace, then value or ]
-		// BONJSON: small integer 91 (single byte, document complete)
-		return looksLikeJSONArray(remaining)
-
-	case '"':
-		// JSON string: " followed by string content and closing "
-		// BONJSON: small integer 34 (single byte, document complete)
-		// If there's more data, it's almost certainly JSON
-		return len(remaining) > 0
-
-	case '-':
-		// JSON negative number: - must be followed by a digit
-		// BONJSON: small integer 45 (single byte, document complete)
-		return len(remaining) > 0 && isDigit(remaining[0])
-
-	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		// JSON number: digit optionally followed by more digits, decimal, exponent
-		// BONJSON: small integer 48-57 (single byte, document complete)
-		if len(remaining) == 0 {
-			// Single digit is ambiguous; default to BONJSON since it's more
-			// likely someone is converting a BONJSON small int than a JSON
-			// document containing just a single digit
-			return false
-		}
-		// If followed by valid JSON number/document continuation, it's JSON
-		return isJSONNumberOrDocContinuation(remaining[0])
-	}
-
-	// Default to JSON for any unhandled case
-	return true
-}
-
-// skipWhitespace returns the index of the first non-whitespace byte at or after start.
-func skipWhitespace(data []byte, start int) int {
-	for start < len(data) && isWhitespace(data[start]) {
-		start++
-	}
-	return start
-}
-
-// isWhitespace returns true if b is a JSON whitespace character.
-func isWhitespace(b byte) bool {
-	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
-}
-
-// isDigit returns true if b is an ASCII digit.
-func isDigit(b byte) bool {
-	return b >= '0' && b <= '9'
-}
-
-// isValidJSONStart returns true if b can be the first non-whitespace byte of a JSON document.
-func isValidJSONStart(b byte) bool {
-	switch b {
-	case '{', '[', '"', 't', 'f', 'n', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		return true
-	}
-	return false
-}
-
-// looksLikeJSONObject checks if remaining bytes (after '{') look like a JSON object.
-// In JSON, after '{' we expect optional whitespace then '"' (key) or '}' (empty object).
-func looksLikeJSONObject(remaining []byte) bool {
-	i := skipWhitespace(remaining, 0)
-	if i >= len(remaining) {
-		return false // EOF after '{', not valid JSON but also not 4-byte BONJSON int
-	}
-	return remaining[i] == '"' || remaining[i] == '}'
-}
-
-// looksLikeJSONArray checks if remaining bytes (after '[') look like a JSON array.
-// In JSON, after '[' we expect optional whitespace then a value start or ']' (empty array).
-func looksLikeJSONArray(remaining []byte) bool {
-	i := skipWhitespace(remaining, 0)
-	if i >= len(remaining) {
-		return false // EOF after '[', not valid but lean toward BONJSON (int 91)
-	}
-	// Check for valid JSON array content: value start or closing bracket
-	return isValidJSONStart(remaining[i]) || remaining[i] == ']'
-}
-
-// isJSONNumberOrDocContinuation returns true if b could follow a digit in JSON.
-// This includes more digits, decimal point, exponent, or structural characters.
-func isJSONNumberOrDocContinuation(b byte) bool {
-	switch b {
-	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9': // more digits
-		return true
-	case '.': // decimal point
-		return true
-	case 'e', 'E': // exponent
-		return true
-	case ' ', '\t', '\n', '\r': // whitespace after number
-		return true
-	case ',', ']', '}': // structural characters after number
-		return true
-	}
-	return false
-}
-
-// jsonToBONJSON converts JSON data to BONJSON format.
-func jsonToBONJSON(data []byte) ([]byte, error) {
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return nil, err
-	}
-	return bonjson.Marshal(value)
-}
-
-// bonjsonToJSON converts BONJSON data to pretty-printed JSON format.
-// If allowTrailing is true, trailing data after the BONJSON document is ignored.
-// Returns the JSON output (which may be partial on decode error), the number of
-// BONJSON bytes consumed, and any decode error.
-func bonjsonToJSON(data []byte, allowTrailing bool) ([]byte, int, error) {
-	var value any
-	byteCount, decodeErr := bonjson.UnmarshalWithByteCount(data, &value)
-	if decodeErr != nil {
-		// If trailing data error and we're allowing it, ignore the error
-		// since the value was successfully decoded
-		var trailingErr *bonjson.TrailingDataError
-		if allowTrailing && errors.As(decodeErr, &trailingErr) {
-			decodeErr = nil
-		}
-	}
-	// Always try to marshal whatever was decoded, even on error
-	output, marshalErr := json.MarshalIndent(value, "", "    ")
-	if marshalErr != nil {
-		return nil, byteCount, decodeErr
-	}
-	return output, byteCount, decodeErr
 }
 
 // writeOutput writes data to the specified file, or to stdout if path is empty
