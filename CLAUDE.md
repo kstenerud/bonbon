@@ -20,7 +20,7 @@ bonbon [options] <command> <input> [output]
 - `j2b` : Convert JSON to BONJSON
 - `j2j` : Convert JSON to JSON (reformat)
 - `b2j` : Convert BONJSON to JSON
-- `b2b` : Convert BONJSON to BONJSON (reformat)
+- `b2b` : Convert BONJSON to BONJSON (dechunk)
 
 **Options:**
 - `-e` : Print end offset to stderr (BONJSON input only)

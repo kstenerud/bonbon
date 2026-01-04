@@ -23,7 +23,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  j2b      Convert JSON to BONJSON")
 	fmt.Fprintln(os.Stderr, "  j2j      Convert JSON to JSON (reformat)")
 	fmt.Fprintln(os.Stderr, "  b2j      Convert BONJSON to JSON")
-	fmt.Fprintln(os.Stderr, "  b2b      Convert BONJSON to BONJSON (reformat)")
+	fmt.Fprintln(os.Stderr, "  b2b      Convert BONJSON to BONJSON (dechunk)")
 	fmt.Fprintln(os.Stderr, "Options:")
 	fmt.Fprintln(os.Stderr, "  -e       Print end offset to stderr (BONJSON input only)")
 	fmt.Fprintln(os.Stderr, "  -s N     Skip N bytes before decoding")
