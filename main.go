@@ -135,6 +135,7 @@ func convert(inputPath, outputPath string, allowTrailing bool, skipBytes int, pr
 
 	var output []byte
 	var outputIsJSON bool
+	var decodeErr error
 	if isJSON {
 		output, err = jsonToBONJSON(data)
 		if err != nil {
@@ -143,17 +144,26 @@ func convert(inputPath, outputPath string, allowTrailing bool, skipBytes int, pr
 		outputIsJSON = false
 	} else {
 		var byteCount int
-		output, byteCount, err = bonjsonToJSON(data, allowTrailing)
-		if err != nil {
-			return fmt.Errorf("converting BONJSON to JSON: %w", err)
-		}
+		output, byteCount, decodeErr = bonjsonToJSON(data, allowTrailing)
 		if printEndOffset {
 			fmt.Fprintf(os.Stderr, "%d\n", skipBytes+byteCount)
 		}
 		outputIsJSON = true
 	}
 
-	return writeOutput(output, outputPath, outputIsJSON)
+	// Write output first (may be partial on BONJSON decode error)
+	if len(output) > 0 {
+		if err := writeOutput(output, outputPath, outputIsJSON); err != nil {
+			return err
+		}
+	}
+
+	// Report any decode error after writing partial output
+	if decodeErr != nil {
+		return fmt.Errorf("converting BONJSON to JSON: %w", decodeErr)
+	}
+
+	return nil
 }
 
 // detectJSON determines if the data appears to be JSON (text) or BONJSON (binary).
@@ -322,23 +332,25 @@ func jsonToBONJSON(data []byte) ([]byte, error) {
 
 // bonjsonToJSON converts BONJSON data to pretty-printed JSON format.
 // If allowTrailing is true, trailing data after the BONJSON document is ignored.
-// Returns the JSON output, the number of BONJSON bytes consumed, and any error.
+// Returns the JSON output (which may be partial on decode error), the number of
+// BONJSON bytes consumed, and any decode error.
 func bonjsonToJSON(data []byte, allowTrailing bool) ([]byte, int, error) {
 	var value any
-	byteCount, err := bonjson.UnmarshalWithByteCount(data, &value)
-	if err != nil {
+	byteCount, decodeErr := bonjson.UnmarshalWithByteCount(data, &value)
+	if decodeErr != nil {
 		// If trailing data error and we're allowing it, ignore the error
 		// since the value was successfully decoded
 		var trailingErr *bonjson.TrailingDataError
-		if allowTrailing && errors.As(err, &trailingErr) {
-			err = nil
+		if allowTrailing && errors.As(decodeErr, &trailingErr) {
+			decodeErr = nil
 		}
 	}
-	if err != nil {
-		return nil, 0, err
+	// Always try to marshal whatever was decoded, even on error
+	output, marshalErr := json.MarshalIndent(value, "", "    ")
+	if marshalErr != nil {
+		return nil, byteCount, decodeErr
 	}
-	output, err := json.MarshalIndent(value, "", "    ")
-	return output, byteCount, err
+	return output, byteCount, decodeErr
 }
 
 // writeOutput writes data to the specified file, or to stdout if path is empty

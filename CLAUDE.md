@@ -13,6 +13,7 @@ j2b [options] <input-file> [<output-file>]
 - Use `-` for stdin or stdout
 - If output-file is omitted, validates input only (no conversion)
 - JSON output is pretty-printed with 4-space indentation
+- On BONJSON decode error, outputs whatever was successfully decoded before reporting the error
 
 **Options:**
 - `-e` : Print end offset of decoded BONJSON document to stderr (BONJSON input only)
@@ -96,9 +97,7 @@ Run unit tests:
 go test -v
 ```
 
-Manual round-trip test:
+Run CLI integration tests:
 ```
-echo '{"hello": "world"}' > test.json
-./j2b test.json test.boj
-./j2b test.boj
+./test_cli.sh
 ```
