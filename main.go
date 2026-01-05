@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,25 +26,47 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  b2j      Convert BONJSON to JSON")
 	fmt.Fprintln(os.Stderr, "  b2b      Convert BONJSON to BONJSON (dechunk)")
 	fmt.Fprintln(os.Stderr, "Options:")
+	fmt.Fprintln(os.Stderr, "  -d MODE  Duplicate key handling (BONJSON input only):")
+	fmt.Fprintln(os.Stderr, "           reject (default), keepfirst, keeplast")
 	fmt.Fprintln(os.Stderr, "  -e       Print end offset to stderr (BONJSON input only)")
+	fmt.Fprintln(os.Stderr, "  -n       Allow NUL characters in strings (BONJSON input only)")
 	fmt.Fprintln(os.Stderr, "  -s N     Skip N bytes before decoding")
 	fmt.Fprintln(os.Stderr, "  -t       Allow trailing data (BONJSON input only)")
+	fmt.Fprintln(os.Stderr, "  -u MODE  Invalid UTF-8 handling (BONJSON input only):")
+	fmt.Fprintln(os.Stderr, "           reject (default), replace, delete, ignore")
 }
 
 func main() {
 	var allowTrailing bool
 	var skipBytes int
 	var printEndOffset bool
+	var allowNUL bool
+	var dupKeyMode string
+	var utf8Mode string
 	args := os.Args[1:]
 
 	// Parse flags
 	for len(args) > 0 && len(args[0]) > 0 && args[0][0] == '-' && args[0] != "-" {
 		switch args[0] {
-		case "-t":
-			allowTrailing = true
-			args = args[1:]
+		case "-d":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Error: -d requires an argument")
+				os.Exit(1)
+			}
+			dupKeyMode = args[1]
+			switch dupKeyMode {
+			case "reject", "keepfirst", "keeplast":
+				// valid
+			default:
+				fmt.Fprintf(os.Stderr, "Error: invalid duplicate key mode: %s\n", dupKeyMode)
+				os.Exit(1)
+			}
+			args = args[2:]
 		case "-e":
 			printEndOffset = true
+			args = args[1:]
+		case "-n":
+			allowNUL = true
 			args = args[1:]
 		case "-s":
 			if len(args) < 2 {
@@ -54,6 +77,23 @@ func main() {
 			skipBytes, err = strconv.Atoi(args[1])
 			if err != nil || skipBytes < 0 {
 				fmt.Fprintf(os.Stderr, "Error: invalid skip value: %s\n", args[1])
+				os.Exit(1)
+			}
+			args = args[2:]
+		case "-t":
+			allowTrailing = true
+			args = args[1:]
+		case "-u":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Error: -u requires an argument")
+				os.Exit(1)
+			}
+			utf8Mode = args[1]
+			switch utf8Mode {
+			case "reject", "replace", "delete", "ignore":
+				// valid
+			default:
+				fmt.Fprintf(os.Stderr, "Error: invalid UTF-8 mode: %s\n", utf8Mode)
 				os.Exit(1)
 			}
 			args = args[2:]
@@ -118,7 +158,7 @@ func main() {
 		}
 	}
 
-	if err := convert(inputPath, outputPath, inputJSON, outputJSON, allowTrailing, skipBytes, printEndOffset); err != nil {
+	if err := convert(inputPath, outputPath, inputJSON, outputJSON, allowTrailing, skipBytes, printEndOffset, allowNUL, dupKeyMode, utf8Mode); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -130,8 +170,10 @@ func main() {
 // output. inputJSON and outputJSON specify the formats. If allowTrailing is
 // true, trailing data after a BONJSON document is ignored. If skipBytes > 0,
 // that many bytes are skipped before decoding. If printEndOffset is true and
-// input is BONJSON, prints the end offset to stderr.
-func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrailing bool, skipBytes int, printEndOffset bool) error {
+// input is BONJSON, prints the end offset to stderr. allowNUL, dupKeyMode, and
+// utf8Mode configure BONJSON decoder behavior for NUL characters, duplicate
+// keys, and invalid UTF-8 sequences respectively.
+func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrailing bool, skipBytes int, printEndOffset bool, allowNUL bool, dupKeyMode, utf8Mode string) error {
 	var data []byte
 	var err error
 	if inputPath == "-" {
@@ -159,7 +201,7 @@ func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrai
 
 	// Decode input
 	var value any
-	var byteCount int
+	var byteCount int64
 	var decodeErr error
 
 	if inputJSON {
@@ -167,7 +209,29 @@ func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrai
 			return fmt.Errorf("invalid JSON: %w", err)
 		}
 	} else {
-		byteCount, decodeErr = bonjson.UnmarshalWithByteCount(data, &value)
+		dec := bonjson.NewDecoder(bytes.NewReader(data))
+		if allowNUL {
+			dec.AllowNUL()
+		}
+		switch dupKeyMode {
+		case "keepfirst":
+			dec.SetDuplicateKeyMode(bonjson.DupKeyKeepFirst)
+		case "keeplast":
+			dec.SetDuplicateKeyMode(bonjson.DupKeyKeepLast)
+		}
+		switch utf8Mode {
+		case "replace":
+			dec.SetInvalidUTF8Mode(bonjson.UTF8Replace)
+		case "delete":
+			dec.SetInvalidUTF8Mode(bonjson.UTF8Delete)
+		case "ignore":
+			dec.SetInvalidUTF8Mode(bonjson.UTF8Ignore)
+		}
+		decodeErr = dec.Decode(&value)
+		byteCount = dec.InputOffset()
+		if decodeErr == nil && byteCount < int64(len(data)) {
+			decodeErr = &bonjson.TrailingDataError{Offset: byteCount}
+		}
 		if decodeErr != nil {
 			var trailingErr *bonjson.TrailingDataError
 			if allowTrailing && errors.As(decodeErr, &trailingErr) {
@@ -175,7 +239,7 @@ func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrai
 			}
 		}
 		if printEndOffset {
-			fmt.Fprintf(os.Stderr, "%d\n", skipBytes+byteCount)
+			fmt.Fprintf(os.Stderr, "%d\n", skipBytes+int(byteCount))
 		}
 	}
 

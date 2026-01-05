@@ -23,9 +23,12 @@ bonbon [options] <command> <input> [output]
 - `b2b` : Convert BONJSON to BONJSON (dechunk)
 
 **Options:**
+- `-d MODE` : Duplicate key handling (BONJSON input only): reject (default), keepfirst, keeplast
 - `-e` : Print end offset to stderr (BONJSON input only)
+- `-n` : Allow NUL characters in strings (BONJSON input only)
 - `-s N` : Skip N bytes before decoding (useful for files with headers)
 - `-t` : Allow trailing data (BONJSON input only)
+- `-u MODE` : Invalid UTF-8 handling (BONJSON input only): reject (default), replace, delete, ignore
 
 ## Architecture
 
@@ -41,7 +44,7 @@ This is a simple single-file CLI application with no complex architecture. All l
 ## Dependencies
 
 - `github.com/kstenerud/go-bonjson`: The BONJSON encoding/decoding library
-- Standard library: `encoding/json`, `errors`, `fmt`, `io`, `os`, `strconv`
+- Standard library: `bytes`, `encoding/json`, `errors`, `fmt`, `io`, `os`, `strconv`
 
 ## Building
 

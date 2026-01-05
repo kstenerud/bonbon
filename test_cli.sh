@@ -164,6 +164,82 @@ else
     pass "b: rejects output file argument"
 fi
 
+# Test: -n option allows NUL characters
+# Create BONJSON with NUL in string: 0x83 (string length 3) + "a\x00b"
+printf '\x83a\x00b' > "$TMPDIR/nul.boj"
+if ./bonbon b "$TMPDIR/nul.boj" 2>/dev/null; then
+    fail "-n: NUL rejected by default"
+else
+    pass "-n: NUL rejected by default"
+fi
+if ./bonbon -n b "$TMPDIR/nul.boj" 2>/dev/null; then
+    pass "-n: NUL allowed with -n flag"
+else
+    fail "-n: NUL allowed with -n flag"
+fi
+
+# Test: -d option for duplicate key handling
+# Create BONJSON object with duplicate keys: {"a":1,"a":2}
+# 0x9a = start object, 0x81 = string len 1, 'a', 0x01 = int 1, 0x81 'a' 0x02 = int 2, 0x9b = end object
+printf '\x9a\x81a\x01\x81a\x02\x9b' > "$TMPDIR/dupkey.boj"
+if ./bonbon b "$TMPDIR/dupkey.boj" 2>/dev/null; then
+    fail "-d: duplicate keys rejected by default"
+else
+    pass "-d: duplicate keys rejected by default"
+fi
+OUTPUT=$(./bonbon -d keepfirst b2j "$TMPDIR/dupkey.boj" - 2>/dev/null)
+if echo "$OUTPUT" | grep -q '"a": 1'; then
+    pass "-d keepfirst: keeps first value"
+else
+    fail "-d keepfirst: keeps first value (got: $OUTPUT)"
+fi
+OUTPUT=$(./bonbon -d keeplast b2j "$TMPDIR/dupkey.boj" - 2>/dev/null)
+if echo "$OUTPUT" | grep -q '"a": 2'; then
+    pass "-d keeplast: keeps last value"
+else
+    fail "-d keeplast: keeps last value (got: $OUTPUT)"
+fi
+
+# Test: -u option for invalid UTF-8 handling
+# Create BONJSON with invalid UTF-8: 0x83 (string len 3) + "a\xffb"
+printf '\x83a\xffb' > "$TMPDIR/badutf8.boj"
+if ./bonbon b "$TMPDIR/badutf8.boj" 2>/dev/null; then
+    fail "-u: invalid UTF-8 rejected by default"
+else
+    pass "-u: invalid UTF-8 rejected by default"
+fi
+OUTPUT=$(./bonbon -u replace b2j "$TMPDIR/badutf8.boj" - 2>/dev/null)
+if echo "$OUTPUT" | grep -q 'a.*b'; then
+    pass "-u replace: replaces invalid bytes"
+else
+    fail "-u replace: replaces invalid bytes (got: $OUTPUT)"
+fi
+OUTPUT=$(./bonbon -u delete b2j "$TMPDIR/badutf8.boj" - 2>/dev/null)
+if [ "$OUTPUT" = '"ab"' ]; then
+    pass "-u delete: deletes invalid bytes"
+else
+    fail "-u delete: deletes invalid bytes (got: $OUTPUT)"
+fi
+if ./bonbon -u ignore b "$TMPDIR/badutf8.boj" 2>/dev/null; then
+    pass "-u ignore: ignores invalid UTF-8"
+else
+    fail "-u ignore: ignores invalid UTF-8"
+fi
+
+# Test: invalid -d mode produces error
+if ./bonbon -d invalid b - 2>/dev/null; then
+    fail "-d: rejects invalid mode"
+else
+    pass "-d: rejects invalid mode"
+fi
+
+# Test: invalid -u mode produces error
+if ./bonbon -u invalid b - 2>/dev/null; then
+    fail "-u: rejects invalid mode"
+else
+    pass "-u: rejects invalid mode"
+fi
+
 # Summary
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
