@@ -25,6 +25,7 @@ bonbon [options] <command> <input> [output]
 **Options:**
 - `-d MODE` : Duplicate key handling (BONJSON input only): reject (default), keepfirst, keeplast
 - `-e` : Print end offset to stderr (BONJSON input only)
+- `-f MODE` : Special float (NaN, Infinity) handling (BONJSON only): reject (default), allow, stringify
 - `-n` : Allow NUL characters in strings (BONJSON input only)
 - `-s N` : Skip N bytes before decoding (useful for files with headers)
 - `-t` : Allow trailing data (BONJSON input only)

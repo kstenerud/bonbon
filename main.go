@@ -29,6 +29,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  -d MODE  Duplicate key handling (BONJSON input only):")
 	fmt.Fprintln(os.Stderr, "           reject (default), keepfirst, keeplast")
 	fmt.Fprintln(os.Stderr, "  -e       Print end offset to stderr (BONJSON input only)")
+	fmt.Fprintln(os.Stderr, "  -f MODE  Special float (NaN, Infinity) handling (BONJSON only):")
+	fmt.Fprintln(os.Stderr, "           reject (default), allow, stringify")
 	fmt.Fprintln(os.Stderr, "  -n       Allow NUL characters in strings (BONJSON input only)")
 	fmt.Fprintln(os.Stderr, "  -s N     Skip N bytes before decoding")
 	fmt.Fprintln(os.Stderr, "  -t       Allow trailing data (BONJSON input only)")
@@ -43,6 +45,7 @@ func main() {
 	var allowNUL bool
 	var dupKeyMode string
 	var utf8Mode string
+	var nanInfMode string
 	args := os.Args[1:]
 
 	// Parse flags
@@ -65,6 +68,20 @@ func main() {
 		case "-e":
 			printEndOffset = true
 			args = args[1:]
+		case "-f":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Error: -f requires an argument")
+				os.Exit(1)
+			}
+			nanInfMode = args[1]
+			switch nanInfMode {
+			case "reject", "allow", "stringify":
+				// valid
+			default:
+				fmt.Fprintf(os.Stderr, "Error: invalid special float mode: %s\n", nanInfMode)
+				os.Exit(1)
+			}
+			args = args[2:]
 		case "-n":
 			allowNUL = true
 			args = args[1:]
@@ -158,7 +175,7 @@ func main() {
 		}
 	}
 
-	if err := convert(inputPath, outputPath, inputJSON, outputJSON, allowTrailing, skipBytes, printEndOffset, allowNUL, dupKeyMode, utf8Mode); err != nil {
+	if err := convert(inputPath, outputPath, inputJSON, outputJSON, allowTrailing, skipBytes, printEndOffset, allowNUL, dupKeyMode, utf8Mode, nanInfMode); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -170,10 +187,10 @@ func main() {
 // output. inputJSON and outputJSON specify the formats. If allowTrailing is
 // true, trailing data after a BONJSON document is ignored. If skipBytes > 0,
 // that many bytes are skipped before decoding. If printEndOffset is true and
-// input is BONJSON, prints the end offset to stderr. allowNUL, dupKeyMode, and
-// utf8Mode configure BONJSON decoder behavior for NUL characters, duplicate
-// keys, and invalid UTF-8 sequences respectively.
-func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrailing bool, skipBytes int, printEndOffset bool, allowNUL bool, dupKeyMode, utf8Mode string) error {
+// input is BONJSON, prints the end offset to stderr. allowNUL, dupKeyMode,
+// utf8Mode, and nanInfMode configure BONJSON behavior for NUL characters,
+// duplicate keys, invalid UTF-8 sequences, and special float values respectively.
+func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrailing bool, skipBytes int, printEndOffset bool, allowNUL bool, dupKeyMode, utf8Mode, nanInfMode string) error {
 	var data []byte
 	var err error
 	if inputPath == "-" {
@@ -227,6 +244,12 @@ func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrai
 		case "ignore":
 			dec.SetInvalidUTF8Mode(bonjson.UTF8Ignore)
 		}
+		switch nanInfMode {
+		case "allow":
+			dec.SetNaNInfinityMode(bonjson.NaNInfAllow)
+		case "stringify":
+			dec.SetNaNInfinityMode(bonjson.NaNInfStringify)
+		}
 		decodeErr = dec.Decode(&value)
 		byteCount = dec.InputOffset()
 		if decodeErr == nil && byteCount < int64(len(data)) {
@@ -259,10 +282,18 @@ func convert(inputPath, outputPath string, inputJSON, outputJSON bool, allowTrai
 			return fmt.Errorf("encoding JSON: %w", err)
 		}
 	} else {
-		output, err = bonjson.Marshal(value)
-		if err != nil {
+		var buf bytes.Buffer
+		enc := bonjson.NewEncoder(&buf)
+		switch nanInfMode {
+		case "allow":
+			enc.SetNaNInfinityMode(bonjson.NaNInfAllow)
+		case "stringify":
+			enc.SetNaNInfinityMode(bonjson.NaNInfStringify)
+		}
+		if err := enc.Encode(value); err != nil {
 			return fmt.Errorf("encoding BONJSON: %w", err)
 		}
+		output = buf.Bytes()
 	}
 
 	// Write output (may be partial on BONJSON decode error)

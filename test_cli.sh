@@ -240,6 +240,88 @@ else
     pass "-u: rejects invalid mode"
 fi
 
+# Test: -f option for special float (NaN/Infinity) handling
+# Create BONJSON with NaN: 0x6c (64-bit float) + IEEE 754 NaN in little-endian
+printf '\x6c\x01\x00\x00\x00\x00\x00\xf8\x7f' > "$TMPDIR/nan.boj"
+# Create BONJSON with +Infinity
+printf '\x6c\x00\x00\x00\x00\x00\x00\xf0\x7f' > "$TMPDIR/posinf.boj"
+# Create BONJSON with -Infinity
+printf '\x6c\x00\x00\x00\x00\x00\x00\xf0\xff' > "$TMPDIR/neginf.boj"
+
+# Test: NaN rejected by default
+if ./bonbon b "$TMPDIR/nan.boj" 2>/dev/null; then
+    fail "-f: NaN rejected by default"
+else
+    pass "-f: NaN rejected by default"
+fi
+
+# Test: +Infinity rejected by default
+if ./bonbon b "$TMPDIR/posinf.boj" 2>/dev/null; then
+    fail "-f: +Infinity rejected by default"
+else
+    pass "-f: +Infinity rejected by default"
+fi
+
+# Test: -f allow mode allows NaN
+if ./bonbon -f allow b "$TMPDIR/nan.boj" 2>/dev/null; then
+    pass "-f allow: NaN allowed"
+else
+    fail "-f allow: NaN allowed"
+fi
+
+# Test: -f allow mode allows +Infinity
+if ./bonbon -f allow b "$TMPDIR/posinf.boj" 2>/dev/null; then
+    pass "-f allow: +Infinity allowed"
+else
+    fail "-f allow: +Infinity allowed"
+fi
+
+# Test: -f allow mode allows -Infinity
+if ./bonbon -f allow b "$TMPDIR/neginf.boj" 2>/dev/null; then
+    pass "-f allow: -Infinity allowed"
+else
+    fail "-f allow: -Infinity allowed"
+fi
+
+# Test: -f stringify mode converts NaN to string
+OUTPUT=$(./bonbon -f stringify b2j "$TMPDIR/nan.boj" - 2>/dev/null)
+if [ "$OUTPUT" = '"NaN"' ]; then
+    pass "-f stringify: NaN becomes string"
+else
+    fail "-f stringify: NaN becomes string (got: $OUTPUT)"
+fi
+
+# Test: -f stringify mode converts +Infinity to string
+OUTPUT=$(./bonbon -f stringify b2j "$TMPDIR/posinf.boj" - 2>/dev/null)
+if [ "$OUTPUT" = '"Infinity"' ]; then
+    pass "-f stringify: +Infinity becomes string"
+else
+    fail "-f stringify: +Infinity becomes string (got: $OUTPUT)"
+fi
+
+# Test: -f stringify mode converts -Infinity to string
+OUTPUT=$(./bonbon -f stringify b2j "$TMPDIR/neginf.boj" - 2>/dev/null)
+if [ "$OUTPUT" = '"-Infinity"' ]; then
+    pass "-f stringify: -Infinity becomes string"
+else
+    fail "-f stringify: -Infinity becomes string (got: $OUTPUT)"
+fi
+
+# Test: -f allow with b2b round-trip preserves NaN
+./bonbon -f allow b2b "$TMPDIR/nan.boj" "$TMPDIR/nan_rt.boj" 2>/dev/null
+if cmp -s "$TMPDIR/nan.boj" "$TMPDIR/nan_rt.boj"; then
+    pass "-f allow: b2b preserves NaN"
+else
+    fail "-f allow: b2b preserves NaN"
+fi
+
+# Test: invalid -f mode produces error
+if ./bonbon -f invalid b - 2>/dev/null; then
+    fail "-f: rejects invalid mode"
+else
+    pass "-f: rejects invalid mode"
+fi
+
 # Summary
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
