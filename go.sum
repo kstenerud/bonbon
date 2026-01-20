@@ -1,2 +1,2 @@
-github.com/kstenerud/go-bonjson v0.0.0-20260105103737-a63394b4cb37 h1:nol+uh/ED42sCqBTAVJ4no59XNiRa0JnWT90nluKxUg=
-github.com/kstenerud/go-bonjson v0.0.0-20260105103737-a63394b4cb37/go.mod h1:WSmqbXmEirUFMgbT1R9imrzTpM19sInfniwS2vmsEvg=
+github.com/kstenerud/go-bonjson v0.0.0-20260120142331-c034118704df h1:g9AoEJrI/3pMSrOGUr0Wml1Ydqc776heUk5l94C+Nq0=
+github.com/kstenerud/go-bonjson v0.0.0-20260120142331-c034118704df/go.mod h1:WSmqbXmEirUFMgbT1R9imrzTpM19sInfniwS2vmsEvg=
