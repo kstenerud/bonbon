@@ -69,8 +69,8 @@ else
 fi
 
 # Test: b command - validate BONJSON (invalid)
-# Object claiming 1 pair but no data: 0xf9 (object) + 0x04 (1 pair chunk)
-printf '\xf9\x04' > "$TMPDIR/invalid.boj"  # Truncated object
+# Object start (0xfd) with no content and no end marker - truncated
+printf '\xfd' > "$TMPDIR/invalid.boj"  # Truncated object
 if ./bonbon b "$TMPDIR/invalid.boj" 2>/dev/null; then
     fail "b: rejects invalid BONJSON"
 else
@@ -130,8 +130,8 @@ else
 fi
 
 # Test: Truncated BONJSON returns error
-# Object claiming 2 pairs but only 1 provided: 0xf9 (object) + 0x08 (2 pairs) + key "a" + value 1
-printf '\xf9\x08\xe1a\x65' > "$TMPDIR/truncated.boj"  # Incomplete object
+# Object start (0xfd) + key "a" (0xd1 'a') + value 1 (0x65) but no end marker
+printf '\xfd\xd1a\x65' > "$TMPDIR/truncated.boj"  # Incomplete object
 EXITCODE=$(./bonbon b2j "$TMPDIR/truncated.boj" - >/dev/null 2>&1; echo $?)
 if [ "$EXITCODE" != "0" ]; then
     pass "Truncated BONJSON returns error"
@@ -168,8 +168,8 @@ else
 fi
 
 # Test: -n option allows NUL characters
-# Create BONJSON with NUL in string: 0xe3 (short string length 3) + "a\x00b"
-printf '\xe3a\x00b' > "$TMPDIR/nul.boj"
+# Create BONJSON with NUL in string: 0xd3 (short string length 3) + "a\x00b"
+printf '\xd3a\x00b' > "$TMPDIR/nul.boj"
 if ./bonbon b "$TMPDIR/nul.boj" 2>/dev/null; then
     fail "-n: NUL rejected by default"
 else
@@ -183,8 +183,8 @@ fi
 
 # Test: -d option for duplicate key handling
 # Create BONJSON object with duplicate keys: {"a":1,"a":2}
-# 0xf9 = object, 0x08 = 2 pairs chunk, 0xe1 = string len 1, 'a', 0x65 = int 1, 0xe1 'a' 0x66 = int 2
-printf '\xf9\x08\xe1a\x65\xe1a\x66' > "$TMPDIR/dupkey.boj"
+# 0xfd = object start, 0xd1 = string len 1, 'a', 0x65 = int 1, 0xd1 'a' 0x66 = int 2, 0xfe = object end
+printf '\xfd\xd1a\x65\xd1a\x66\xfe' > "$TMPDIR/dupkey.boj"
 if ./bonbon b "$TMPDIR/dupkey.boj" 2>/dev/null; then
     fail "-d: duplicate keys rejected by default"
 else
@@ -204,8 +204,8 @@ else
 fi
 
 # Test: -u option for invalid UTF-8 handling
-# Create BONJSON with invalid UTF-8: 0xe3 (short string len 3) + "a\xffb"
-printf '\xe3a\xffb' > "$TMPDIR/badutf8.boj"
+# Create BONJSON with invalid UTF-8: 0xd3 (short string len 3) + "a\xffb"
+printf '\xd3a\xffb' > "$TMPDIR/badutf8.boj"
 if ./bonbon b "$TMPDIR/badutf8.boj" 2>/dev/null; then
     fail "-u: invalid UTF-8 rejected by default"
 else
@@ -244,12 +244,12 @@ else
 fi
 
 # Test: -f option for special float (NaN/Infinity) handling
-# Create BONJSON with NaN: 0xf4 (64-bit float) + IEEE 754 NaN in little-endian
-printf '\xf4\x01\x00\x00\x00\x00\x00\xf8\x7f' > "$TMPDIR/nan.boj"
+# Create BONJSON with NaN: 0xcc (64-bit float) + IEEE 754 NaN in little-endian
+printf '\xcc\x01\x00\x00\x00\x00\x00\xf8\x7f' > "$TMPDIR/nan.boj"
 # Create BONJSON with +Infinity
-printf '\xf4\x00\x00\x00\x00\x00\x00\xf0\x7f' > "$TMPDIR/posinf.boj"
+printf '\xcc\x00\x00\x00\x00\x00\x00\xf0\x7f' > "$TMPDIR/posinf.boj"
 # Create BONJSON with -Infinity
-printf '\xf4\x00\x00\x00\x00\x00\x00\xf0\xff' > "$TMPDIR/neginf.boj"
+printf '\xcc\x00\x00\x00\x00\x00\x00\xf0\xff' > "$TMPDIR/neginf.boj"
 
 # Test: NaN rejected by default
 if ./bonbon b "$TMPDIR/nan.boj" 2>/dev/null; then
