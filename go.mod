@@ -2,4 +2,6 @@ module bonbon
 
 go 1.25.5
 
-require github.com/kstenerud/go-bonjson v0.0.0-20260205114503-2f88e7e7e5d4
+require github.com/kstenerud/go-bonjson v0.0.0-20260206081900-1c04ac28d30b
+
+require golang.org/x/text v0.33.0 // indirect
