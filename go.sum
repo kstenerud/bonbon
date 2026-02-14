@@ -1,4 +1,4 @@
-github.com/kstenerud/go-bonjson v0.0.0-20260206081900-1c04ac28d30b h1:ecL+tpH2GAhVQiV9jDlLtColbFfhtpGZ6GSydHq7zts=
-github.com/kstenerud/go-bonjson v0.0.0-20260206081900-1c04ac28d30b/go.mod h1:S/jhNBymnCB4sNuBggX41k0P9dFaMUGoD5IltF8oXPY=
+github.com/kstenerud/go-bonjson v0.0.0-20260213181334-e5a773df23f2 h1:QCQlzD+iXRxJqDfKT5SIZSyuamisZQ/f225ifmlHA1c=
+github.com/kstenerud/go-bonjson v0.0.0-20260213181334-e5a773df23f2/go.mod h1:S/jhNBymnCB4sNuBggX41k0P9dFaMUGoD5IltF8oXPY=
 golang.org/x/text v0.33.0 h1:B3njUFyqtHDUI5jMn1YIr5B0IE2U0qck04r6d4KPAxE=
 golang.org/x/text v0.33.0/go.mod h1:LuMebE6+rBincTi9+xWTY8TztLzKHc/9C1uBCG27+q8=
